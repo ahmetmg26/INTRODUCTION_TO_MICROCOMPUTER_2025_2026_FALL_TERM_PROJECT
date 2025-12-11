@@ -142,17 +142,27 @@ READ_LOOP:
     ;----------------------------------
     ; keypad tarama 
     
-    CALL KEYPAD
+    CALL tus_A_var_mi
     ; eðer w=0 dönmüþse girilen formatta sorun vardir, tekrar A'ya basýlmasý istenir (Z = 1 )
     ; w=1 dönmüþse format doðrudur, desired_int ve frac deðerlerine atama yapýlýr (Z=0
-    BTFSC STATUS,2 ; z=0 ise atla
+    SUBLW 1
+    BTFSS STATUS, 2
+    GOTO READ_LOOP          ; 'A' basýlmamýþ, devam et
+    
+    ; 'A' basýldý! Þimdi kalan adýmlarý BLOCKING yap
+    CALL KEYPAD    ; Yeni fonksiyon (aþaðýda)
+    
+    ; Dönüþ deðeri kontrol et
+    SUBLW 1
+    BTFSS STATUS, 2
+    GOTO READ_LOOP          ; Hatalý giriþ
+    
+    ; Baþarýlý giriþ!
+    CALL kontrol_ve_atama
     GOTO READ_LOOP
-    ;degeri gonderme islemleri
-    CALL kontrol_ve_atama ; eger desired_temp degeri istenen aralýktaysa RAM'e atanýr
     
     
-    
-    GOTO READ_LOOP
+    ;GOTO READ_LOOP
 
     
     
@@ -240,11 +250,11 @@ delay5ms:
     GOTO delay5ms_Loop1
 
 KEYPAD:
-    ADIM_1_A:
-	CALL    tus_bekle_oku   ; Bir tuþ bekle
-	SUBLW   0x0A            ; Girilen tuþ 'A' (0x0A) mý?
-	BTFSS   STATUS, 2       ; Sonuç 0 ise (Z=1) eþittir.
-	RETLW 0        ; Deðilse, tekrar A gelene kadar bekle. ~~
+    ;ADIM_1_A:
+	;CALL    tus_bekle_oku   ; Bir tuþ bekle
+	;SUBLW   0x0A            ; Girilen tuþ 'A' (0x0A) mý?
+	;BTFSS   STATUS, 2       ; Sonuç 0 ise (Z=1) eþittir.
+	;RETLW 0        ; Deðilse, tekrar A gelene kadar bekle. ~~
 
 	; -----------------------------------------------------------
 	; ADIM 2: BÝRÝNCÝ RAKAMI AL (ONLAR BASAMAÐI)

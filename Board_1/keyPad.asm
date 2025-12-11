@@ -4,6 +4,7 @@
 GLOBAL tus_tara   
 GLOBAL cevrim_tablosu
 GLOBAL tus_bekle_oku
+GLOBAL tus_A_var_mi
     
 ;GLOBAL DEGISKENLER
 GLOBAL ham_tus
@@ -115,8 +116,8 @@ tus_bekle_oku:
     CALL    tus_tara
     XORLW   0xFF
     BTFSC   STATUS, 2       ; Z=1 ise (W=FF) tuþ yok demektir
-    ;GOTO    tus_bekle_oku   ; Tuþ yoksa tekrar tara
-    RETURN
+    GOTO    tus_bekle_oku   ; Tuþ yoksa tekrar tara
+    
     
     ;Tuþu al ve sakla
     CALL    tus_tara        ; Tekrar oku (W'de index var)
@@ -134,4 +135,24 @@ tus_bekle_oku:
 	MOVF    temp_tus, W
 	RETURN
     
+; NON-BLOCKING: Sadece 'A' tuþunu kontrol et
+tus_A_var_mi:
+    CALL    tus_tara
+    XORLW   0xFF
+    BTFSC   STATUS, 2
+    RETLW   0               ; Tus yok
     
+    CALL    tus_tara
+    CALL    cevrim_tablosu
+    SUBLW   0x0A            ; 'A' mý?
+    BTFSS   STATUS, 2
+    RETLW   0               ; 'A' degil
+    
+    ; 'A' basilmis, birakilmasini bekle
+    TUS_A_BIRAKMA:
+    CALL    tus_tara
+    XORLW   0xFF
+    BTFSS   STATUS, 2
+    GOTO    TUS_A_BIRAKMA
+    
+    RETLW   1               ; 'A' basýldý!
