@@ -28,7 +28,9 @@ PSECT code,class=CODE,delta=2
 tus_tara:
     ; --- 1. SATIRI TARA (RB0 = 0) ---
     MOVLW   11111110B    
-    MOVWF   PORTB
+    MOVWF   PORTC
+    NOP
+    NOP
     BTFSS   PORTB, 4        ; Sütun 1 (RB4) 0 m??
     RETLW   0            ; Evet -> Tablodaki 0. eleman (Tu? '1')
     BTFSS   PORTB, 5        ; Sütun 2 (RB5) 0 m??
@@ -40,7 +42,9 @@ tus_tara:
 
     ; --- 2. SATIRI TARA (RB1 = 0) ---
     MOVLW   11111101B
-    MOVWF   PORTB
+    MOVWF   PORTC
+    NOP
+    NOP
     BTFSS   PORTB, 4
     RETLW   4            ; Tu? '4'
     BTFSS   PORTB, 5
@@ -52,7 +56,9 @@ tus_tara:
 
     ; --- 3. SATIRI TARA (RB2 = 0) ---
     MOVLW   11111011B
-    MOVWF   PORTB
+    MOVWF   PORTC
+    NOP
+    NOP
     BTFSS   PORTB, 4
     RETLW   8            ; Tu? '7'
     BTFSS   PORTB, 5
@@ -64,7 +70,9 @@ tus_tara:
 
     ; --- 4. SATIRI TARA (RB3 = 0) ---
     MOVLW   11110111B
-    MOVWF   PORTB
+    MOVWF   PORTC
+    NOP
+    NOP
     BTFSS   PORTB, 4
     RETLW   12          ; Tu? '*'
     BTFSS   PORTB, 5
@@ -114,7 +122,7 @@ cevrim_tablosu:
 tus_bekle_oku:
     ;Bas?lana kadar bekle
     
-    ;CALL    tus_tara ;diyelim A basildi W=3
+    CALL    tus_tara ;diyelim A basildi W=3
     
     XORLW   0xFF
     BTFSC   STATUS, 2       ; Z=1 ise (W=FF) tu? yok demektir
@@ -124,8 +132,8 @@ tus_bekle_oku:
     ;Tu?u al ve sakla
     CALL    tus_tara        ; Tekrar oku (W'de index var)
     
-    MOVLW 3 ; diyelim A basildi
-    
+    ;MOVLW 3 ; diyelim A basildi
+        
     CALL    cevrim_tablosu  ; Gerçek de?ere çevir (W'de A, *, 5 vs var)
     MOVWF   temp_tus        ; Kaybetmemek için sakla
 
@@ -142,17 +150,17 @@ tus_bekle_oku:
     
 ; NON-BLOCKING: Sadece 'A' tu?unu kontrol et
 tus_A_var_mi:
-    RETLW   1
+    ;RETLW   1
     CALL    tus_tara
     
-    MOVLW 3
-    ;XORLW   0xFF
-    ;BTFSC   STATUS, 2
-    ;RETLW   0               ; Tus yok
+    ;MOVLW 3
+    XORLW   0xFF
+    BTFSC   STATUS, 2
+    RETLW   0               ; Tus yok
     
-    ;CALL    tus_tara
+    CALL    tus_tara
     
-    MOVLW 3 ; diyelim A basildi ve W=3 oldu
+    ;MOVLW 3 ; diyelim A basildi ve W=3 oldu
     
     CALL    cevrim_tablosu
     SUBLW   0x0A            ; 'A' m??
@@ -163,7 +171,7 @@ tus_A_var_mi:
     TUS_A_BIRAKMA:
     CALL    tus_tara
     
-    MOVLW 3
+    ;MOVLW 3
     
     XORLW   0xFF
     BTFSS   STATUS, 2

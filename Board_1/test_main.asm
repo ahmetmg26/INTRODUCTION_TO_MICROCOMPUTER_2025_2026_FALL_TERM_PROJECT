@@ -210,8 +210,8 @@ PortInit:
     MOVWF TRISA	      ; RA1-RA4 -> 7-seg-display icin, D1-D4 portlari, output	
 
     BANKSEL ADCON1
-    ;MOVLW 0x8E        ; SADECE AN0 analog, saga yasli Vdd/Vss referans
-    MOVLW 0x0E ; sola yasli
+    MOVLW 0x8E        ; SADECE AN0 analog, saga yasli Vdd/Vss referans
+    ;MOVLW 0x0E ; sola yasli
     MOVWF ADCON1
 
     BANKSEL ADCON0
@@ -301,10 +301,10 @@ KEYPAD:
 	; ADIM 2: B?R?NC? RAKAMI AL (ONLAR BASAMA?I)
 	; -----------------------------------------------------------
     ADIM_2_R1:
-	;MOVLW HIGH(tus_bekle_oku)
-	;MOVWF PCLATH
-	;CALL    tus_bekle_oku   ; Tu? bekle
-	MOVLW 1 ; diyelim 2 girildi
+	MOVLW HIGH(tus_bekle_oku)
+	MOVWF PCLATH
+	CALL    tus_bekle_oku   ; Tu? bekle
+	;MOVLW 1 ; diyelim 1 girildi
 	MOVWF   girilen_onlar   ; Gelen tu?u sakla
 
 	; Kontrol: Bas?lan tu? rakam m?? (0-9 aras? m??)
@@ -317,10 +317,10 @@ KEYPAD:
 	; ADIM 3: ?K?NC? RAKAMI AL (B?RLER BASAMA?I)
 	; -----------------------------------------------------------
     ADIM_3_R2:
-	;MOVLW HIGH(tus_bekle_oku)
-	;MOVWF PCLATH
-	;CALL    tus_bekle_oku
-	MOVLW 8 ;diyelimki 9 girildi
+	MOVLW HIGH(tus_bekle_oku)
+	MOVWF PCLATH
+	CALL    tus_bekle_oku
+	;MOVLW 8 ;diyelimki 8 girildi
 	MOVWF   girilen_birler
 
 	; Kontrol: Rakam m??
@@ -332,12 +332,12 @@ KEYPAD:
 	; ADIM 4: '*' KARAKTER?N? BEKLE (0x0E)
 	; -----------------------------------------------------------
     ADIM_4_YILDIZ:
-	;MOVLW HIGH(tus_bekle_oku)
-	;MOVWF PCLATH
-	;CALL    tus_bekle_oku
-	MOVLW 12 ; diyelim yildiz karakteri girildi
+	MOVLW HIGH(tus_bekle_oku)
+	MOVWF PCLATH
+	CALL    tus_bekle_oku
+	;MOVLW 12 ; diyelim yildiz karakteri girildi
 	
-	SUBLW   0x0C            ; '*' tu?u tablonda 0x0E mi?
+	SUBLW   0x0E            ; '*' tu?u tablonda 0x0E mi?
 	BTFSS   STATUS, 2       ; E?it mi?
 	RETLW 0        ; De?ilse ba?a dön
 
@@ -345,10 +345,10 @@ KEYPAD:
 	; ADIM 5: ÜÇÜNCÜ RAKAMI AL (ONDALIK KISIM)
 	; -----------------------------------------------------------
     ADIM_5_R3:
-	;MOVLW HIGH(tus_bekle_oku)
-	;MOVWF PCLATH
-	;CALL    tus_bekle_oku
-	MOVLW 4 ; diyelim 5 girildi
+	MOVLW HIGH(tus_bekle_oku)
+	MOVWF PCLATH
+	CALL    tus_bekle_oku
+	;MOVLW 4 ; diyelim 4 girildi
 	MOVWF   girilen_ondalik
 
 	; Kontrol: Rakam m??
@@ -360,12 +360,12 @@ KEYPAD:
 	; ADIM 6: '#' KARAKTER?N? BEKLE (B?T??) (0x0F)
 	; -----------------------------------------------------------
     ADIM_6_KARE:
-	;MOVLW HIGH(tus_bekle_oku)
-	;MOVWF PCLATH
-	;CALL    tus_bekle_oku
-	MOVLW 14 ; diyelim # karakteri girildi
+	MOVLW HIGH(tus_bekle_oku)
+	MOVWF PCLATH
+	CALL    tus_bekle_oku
+	;MOVLW 14 ; diyelim # karakteri girildi
 	
-	SUBLW   0x0E            ; '#' tu?u tablonda 0x0F mi?
+	SUBLW   0x0F            ; '#' tu?u tablonda 0x0F mi?
 	BTFSS   STATUS, 2
 	RETLW 0        ; De?ilse ba?a dön
 	;DO?RU G?R?? YAPILDI!

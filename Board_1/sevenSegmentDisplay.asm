@@ -86,7 +86,7 @@ digitlere_ayir:
 ;--------------------------------------------------------------- 
 updateDisplay:
     
-    MOVLW HIGH(updateDisplay) ; Önce PCLATH'ý bu fonksiyonun sayfasýna ayarla
+    MOVLW HIGH(updateDisplay) ; Önce PCLATH'? bu fonksiyonun sayfas?na ayarla
     MOVWF PCLATH
     
     MOVLW 0
