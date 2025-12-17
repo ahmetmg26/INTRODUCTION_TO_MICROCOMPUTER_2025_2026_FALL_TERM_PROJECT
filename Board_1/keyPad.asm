@@ -109,50 +109,64 @@ cevrim_tablosu:
     
     ;--------------------------------------------------------------
     
-    ;Tuþa basýlana kadar bekler, basýlýnca deðeri W'ye alýr,
+    ;Tu?a bas?lana kadar bekler, bas?l?nca de?eri W'ye al?r,
     ; parmak çekilene kadar bekler ve döner.
 tus_bekle_oku:
-    ;Basýlana kadar bekle
-    CALL    tus_tara
+    ;Bas?lana kadar bekle
+    
+    ;CALL    tus_tara ;diyelim A basildi W=3
+    
     XORLW   0xFF
-    BTFSC   STATUS, 2       ; Z=1 ise (W=FF) tuþ yok demektir
-    GOTO    tus_bekle_oku   ; Tuþ yoksa tekrar tara
+    BTFSC   STATUS, 2       ; Z=1 ise (W=FF) tu? yok demektir
+    GOTO    tus_bekle_oku   ; Tu? yoksa tekrar tara
     
     
-    ;Tuþu al ve sakla
+    ;Tu?u al ve sakla
     CALL    tus_tara        ; Tekrar oku (W'de index var)
-    CALL    cevrim_tablosu  ; Gerçek deðere çevir (W'de A, *, 5 vs var)
+    
+    MOVLW 3 ; diyelim A basildi
+    
+    CALL    cevrim_tablosu  ; Gerçek de?ere çevir (W'de A, *, 5 vs var)
     MOVWF   temp_tus        ; Kaybetmemek için sakla
 
     ; 3. Parmak çekilene kadar bekle (Debounce + Release)
     TUS_BIRAKMA:
 	CALL    tus_tara
 	XORLW   0xFF
-	BTFSS   STATUS, 2       ; Z=0 ise (W!=FF) hala basýlý
-	GOTO    TUS_BIRAKMA     ; Býrakýlana kadar dön
+	BTFSS   STATUS, 2       ; Z=0 ise (W!=FF) hala bas?l?
+	GOTO    TUS_BIRAKMA     ; B?rak?lana kadar dön
 
-	; 4. Saklanan deðeri W'ye yükle ve dön
+	; 4. Saklanan de?eri W'ye yükle ve dön
 	MOVF    temp_tus, W
 	RETURN
     
-; NON-BLOCKING: Sadece 'A' tuþunu kontrol et
+; NON-BLOCKING: Sadece 'A' tu?unu kontrol et
 tus_A_var_mi:
+    RETLW   1
     CALL    tus_tara
-    XORLW   0xFF
-    BTFSC   STATUS, 2
-    RETLW   0               ; Tus yok
     
-    CALL    tus_tara
+    MOVLW 3
+    ;XORLW   0xFF
+    ;BTFSC   STATUS, 2
+    ;RETLW   0               ; Tus yok
+    
+    ;CALL    tus_tara
+    
+    MOVLW 3 ; diyelim A basildi ve W=3 oldu
+    
     CALL    cevrim_tablosu
-    SUBLW   0x0A            ; 'A' mý?
+    SUBLW   0x0A            ; 'A' m??
     BTFSS   STATUS, 2
     RETLW   0               ; 'A' degil
     
     ; 'A' basilmis, birakilmasini bekle
     TUS_A_BIRAKMA:
     CALL    tus_tara
+    
+    MOVLW 3
+    
     XORLW   0xFF
     BTFSS   STATUS, 2
     GOTO    TUS_A_BIRAKMA
     
-    RETLW   1               ; 'A' basýldý!
+    RETLW   1               ; 'A' bas?ld?!

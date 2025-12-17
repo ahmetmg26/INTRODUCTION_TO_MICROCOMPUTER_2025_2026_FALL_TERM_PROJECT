@@ -30,11 +30,14 @@
     GLOBAL digitThousands
     
     ;Keypad degiskenleri
-    GLOBAL ham_tus
-    GLOBAL temp_tus
-    GLOBAL girilen_onlar
-    GLOBAL girilen_birler
-    GLOBAL girilen_ondalik
+    ;GLOBAL ham_tus
+    ;GLOBAL temp_tus
+    ;GLOBAL girilen_onlar
+    ;GLOBAL girilen_birler
+    ;GLOBAL girilen_ondalik
+    GLOBAL key_value
+    GLOBAL col_index
+    GLOBAL row_value
 
 ; Configuration bits
 CONFIG FOSC = XT
@@ -82,13 +85,21 @@ onlar: DS 1
 delay5ms_temp0: DS 1
 delay5ms_temp1: DS 1
 
-; Keypad degiskeni tanýmla
+; Keypad degiskeni tan?mla
 ham_tus: DS 1
 temp_tus: DS 1    
-girilen_onlar:  DS 1    ; Ýlk rakam (Örn: 2)
-girilen_birler: DS 1    ; Ýkinci rakam (Örn: 4)
+girilen_onlar:  DS 1    ; ?lk rakam (Örn: 2)
+girilen_birler: DS 1    ; ?kinci rakam (Örn: 4)
 girilen_ondalik: DS 1   ; Virgülden sonraki rakam (Örn: 5)
-temp_calc: DS 1 ;    onlar ve birler'i desired_temp_int deðerinde toplamak için
+temp_calc: DS 1 ;    onlar ve birler'i desired_temp_int de?erinde toplamak için
+    
+key_value:     DS 1   ; Bulunan tu? (0xFF = yok)
+col_index:     DS 1   ; Aktif sütun
+row_value:     DS 1   ; Okunan sat?r de?eri   
+    
+    
+    
+    
 PSECT code
  
 MAIN:
@@ -101,10 +112,23 @@ MAIN:
     CLRF desired_temp_frac
     
 READ_LOOP:
+    ;BANKSEL PORTA
+    
+    
+    MOVLW HIGH(TEMP_ReadAmbient)
+    MOVWF PCLATH
     CALL TEMP_ReadAmbient       ; temperature_module.asm'den
+    
+    MOVLW HIGH(TEMP_UpdateFanControl)
+    MOVWF PCLATH
     CALL TEMP_UpdateFanControl      ; temperature_module.asm'den
     
     ; Test: desired temp'i 7-seg-display'e g?ster
+    BANKSEL desired_temp_int
+    MOVF desired_temp_int,W ; W=desired_temp_int
+    
+    MOVLW HIGH(digitlere_ayir)
+    MOVWF PCLATH
     MOVF desired_temp_int,W ; W=desired_temp_int
     CALL digitlere_ayir ; burdan biler ve onlar belirlenir
     
@@ -112,6 +136,8 @@ READ_LOOP:
     MOVWF digitHundreds
     MOVLW 3
     MOVWF digitNum
+    MOVLW HIGH(updateDisplay)
+    MOVWF PCLATH
     CALL updateDisplay
     CALL delay5ms
     
@@ -119,6 +145,9 @@ READ_LOOP:
     MOVWF digitThousands
     MOVLW 4
     MOVWF digitNum
+    MOVLW HIGH(updateDisplay)
+    MOVWF PCLATH
+    
     CALL updateDisplay
     CALL delay5ms
     
@@ -130,6 +159,8 @@ READ_LOOP:
     MOVWF digitOnes
     MOVLW 1
     MOVWF digitNum
+    MOVLW HIGH(updateDisplay)
+    MOVWF PCLATH
     CALL updateDisplay
     CALL delay5ms
     
@@ -137,27 +168,30 @@ READ_LOOP:
     MOVWF digitTens
     MOVLW 2
     MOVWF digitNum
+    MOVLW HIGH(updateDisplay)
+    MOVWF PCLATH
     CALL updateDisplay
     CALL delay5ms
     ;----------------------------------
     ; keypad tarama 
-    
+    MOVLW HIGH(tus_A_var_mi)
+    MOVWF PCLATH
     CALL tus_A_var_mi
-    ; eðer w=0 dönmüþse girilen formatta sorun vardir, tekrar A'ya basýlmasý istenir (Z = 1 )
-    ; w=1 dönmüþse format doðrudur, desired_int ve frac deðerlerine atama yapýlýr (Z=0
+    ; e?er w=0 dönmü?se girilen formatta sorun vardir, tekrar A'ya bas?lmas? istenir (Z = 1 )
+    ; w=1 dönmü?se format do?rudur, desired_int ve frac de?erlerine atama yap?l?r (Z=0
     SUBLW 1
     BTFSS STATUS, 2
-    GOTO READ_LOOP          ; 'A' basýlmamýþ, devam et
+    GOTO READ_LOOP          ; 'A' bas?lmam??, devam et
     
-    ; 'A' basýldý! Þimdi kalan adýmlarý BLOCKING yap
-    CALL KEYPAD    ; Yeni fonksiyon (aþaðýda)
+    ; 'A' bas?ld?! ?imdi kalan ad?mlar? BLOCKING yap
+    CALL KEYPAD    ; Yeni fonksiyon (a?a??da)
     
-    ; Dönüþ deðeri kontrol et
+    ; Dönü? de?eri kontrol et
     SUBLW 1
     BTFSS STATUS, 2
-    GOTO READ_LOOP          ; Hatalý giriþ
+    GOTO READ_LOOP          ; Hatal? giri?
     
-    ; Baþarýlý giriþ!
+    ; Ba?ar?l? giri?!
     CALL kontrol_ve_atama
     GOTO READ_LOOP
     
@@ -186,16 +220,16 @@ PortInit:
 
     ; ---- PORTB Ayar? ----
     BANKSEL TRISB
-    MOVLW 00000100B ; RB2 giri? (tach), RB0/RB1 cikis --> temperature
-		    ; RB4/RB7 cikis --> keypad
+    MOVLW 11110100B ; RB2 giri? (tach), RB0/RB1 cikis --> temperature
+		    ; RB4/RB7 giris/input --> keypad
     MOVWF TRISB
     
-    BCF     OPTION_REG, 7  ;OPTION_REG yazmacýnýn 7. biti (RBPU) 0 olmalý. PULL-UP direnci icin
+    BCF     OPTION_REG, 7  ;OPTION_REG yazmac?n?n 7. biti (RBPU) 0 olmal?. PULL-UP direnci icin
     
-    
+	
     ; -- PORTC ayarlama -- 
     BANKSEL TRISC
-    MOVLW 00001111 ; RC0/RC3 input  --> keypad icin
+    MOVLW 00000000 ; RC0/RC3 cikis/output  --> keypad icin
     MOVWF TRISC
     
     
@@ -210,6 +244,11 @@ PortInit:
     
     CLRF PORTA
     CLRF PORTB
+    
+    MOVLW 00001111B ; Kolonlar? pasif yap (1)
+    MOVWF PORTC
+
+    
     CLRF PORTD
     RETURN
 
@@ -251,66 +290,85 @@ delay5ms:
 
 KEYPAD:
     ;ADIM_1_A:
-	;CALL    tus_bekle_oku   ; Bir tuþ bekle
-	;SUBLW   0x0A            ; Girilen tuþ 'A' (0x0A) mý?
-	;BTFSS   STATUS, 2       ; Sonuç 0 ise (Z=1) eþittir.
-	;RETLW 0        ; Deðilse, tekrar A gelene kadar bekle. ~~
+	;MOVLW HIGH(tus_bekle_oku)
+	;MOVWF PCLATH
+	;CALL    tus_bekle_oku   ; Bir tu? bekle
+	;SUBLW   0x0A            ; Girilen tu? 'A' (0x0A) m??
+	;BTFSS   STATUS, 2       ; Sonuç 0 ise (Z=1) e?ittir.
+	;RETLW 0        ; De?ilse, tekrar A gelene kadar bekle. ~~
 
 	; -----------------------------------------------------------
-	; ADIM 2: BÝRÝNCÝ RAKAMI AL (ONLAR BASAMAÐI)
+	; ADIM 2: B?R?NC? RAKAMI AL (ONLAR BASAMA?I)
 	; -----------------------------------------------------------
     ADIM_2_R1:
-	CALL    tus_bekle_oku   ; Tuþ bekle
-	MOVWF   girilen_onlar   ; Gelen tuþu sakla
+	;MOVLW HIGH(tus_bekle_oku)
+	;MOVWF PCLATH
+	;CALL    tus_bekle_oku   ; Tu? bekle
+	MOVLW 1 ; diyelim 2 girildi
+	MOVWF   girilen_onlar   ; Gelen tu?u sakla
 
-	; Kontrol: Basýlan tuþ rakam mý? (0-9 arasý mý?)
-	; 9'dan büyükse (A,B,C,D,*,#) hata var demektir, baþa dön.
-	SUBLW   0x09            ; 9 - W iþlemi
+	; Kontrol: Bas?lan tu? rakam m?? (0-9 aras? m??)
+	; 9'dan büyükse (A,B,C,D,*,#) hata var demektir, ba?a dön.
+	SUBLW   0x09            ; 9 - W i?lemi
 	BTFSS   STATUS, 0       ; Carry=0 ise W > 9 demektir (Negatif sonuç)
-	RETLW 0        ; Rakam deðilse baþa dön (Reset)
+	RETLW 0        ; Rakam de?ilse ba?a dön (Reset)
 
 	; -----------------------------------------------------------
-	; ADIM 3: ÝKÝNCÝ RAKAMI AL (BÝRLER BASAMAÐI)
+	; ADIM 3: ?K?NC? RAKAMI AL (B?RLER BASAMA?I)
 	; -----------------------------------------------------------
     ADIM_3_R2:
-	CALL    tus_bekle_oku
+	;MOVLW HIGH(tus_bekle_oku)
+	;MOVWF PCLATH
+	;CALL    tus_bekle_oku
+	MOVLW 8 ;diyelimki 9 girildi
 	MOVWF   girilen_birler
 
-	; Kontrol: Rakam mý?
+	; Kontrol: Rakam m??
 	SUBLW   0x09
 	BTFSS   STATUS, 0       ; W > 9 ise
-	RETLW 0        ; Baþa dön
+	RETLW 0        ; Ba?a dön
 
 	; -----------------------------------------------------------
-	; ADIM 4: '*' KARAKTERÝNÝ BEKLE (0x0E)
+	; ADIM 4: '*' KARAKTER?N? BEKLE (0x0E)
 	; -----------------------------------------------------------
     ADIM_4_YILDIZ:
-	CALL    tus_bekle_oku
-	SUBLW   0x0E            ; '*' tuþu tablonda 0x0E mi?
-	BTFSS   STATUS, 2       ; Eþit mi?
-	RETLW 0        ; Deðilse baþa dön
+	;MOVLW HIGH(tus_bekle_oku)
+	;MOVWF PCLATH
+	;CALL    tus_bekle_oku
+	MOVLW 12 ; diyelim yildiz karakteri girildi
+	
+	SUBLW   0x0C            ; '*' tu?u tablonda 0x0E mi?
+	BTFSS   STATUS, 2       ; E?it mi?
+	RETLW 0        ; De?ilse ba?a dön
 
 	; -----------------------------------------------------------
 	; ADIM 5: ÜÇÜNCÜ RAKAMI AL (ONDALIK KISIM)
 	; -----------------------------------------------------------
     ADIM_5_R3:
-	CALL    tus_bekle_oku
+	;MOVLW HIGH(tus_bekle_oku)
+	;MOVWF PCLATH
+	;CALL    tus_bekle_oku
+	MOVLW 4 ; diyelim 5 girildi
 	MOVWF   girilen_ondalik
 
-	; Kontrol: Rakam mý?
+	; Kontrol: Rakam m??
 	SUBLW   0x09
 	BTFSS   STATUS, 0
 	RETLW 0
 
 	; -----------------------------------------------------------
-	; ADIM 6: '#' KARAKTERÝNÝ BEKLE (BÝTÝÞ) (0x0F)
+	; ADIM 6: '#' KARAKTER?N? BEKLE (B?T??) (0x0F)
 	; -----------------------------------------------------------
     ADIM_6_KARE:
-	CALL    tus_bekle_oku
-	SUBLW   0x0F            ; '#' tuþu tablonda 0x0F mi?
+	;MOVLW HIGH(tus_bekle_oku)
+	;MOVWF PCLATH
+	;CALL    tus_bekle_oku
+	MOVLW 14 ; diyelim # karakteri girildi
+	
+	SUBLW   0x0E            ; '#' tu?u tablonda 0x0F mi?
 	BTFSS   STATUS, 2
-	RETLW 0        ; Deðilse baþa dön
-	;DOÐRU GÝRÝÞ YAPILDI!
+	RETLW 0        ; De?ilse ba?a dön
+	;DO?RU G?R?? YAPILDI!
 	RETLW 1
     
 kontrol_ve_atama:
@@ -322,55 +380,55 @@ kontrol_ve_atama:
 	BCF     STATUS, 0
 	RLF     temp_calc, F        ; temp = 2X
 
-	MOVF    temp_calc, W        ; W = 2X (Bunu kenara, W'ye aldýk)
+	MOVF    temp_calc, W        ; W = 2X (Bunu kenara, W'ye ald?k)
 
 	BCF     STATUS, 0
 	RLF     temp_calc, F        ; temp = 4X
 	BCF     STATUS, 0
 	RLF     temp_calc, F        ; temp = 8X
 
-	ADDWF   temp_calc, W        ; W = 2X + 8X = 10X (Onlar basamaðý tamam)
+	ADDWF   temp_calc, W        ; W = 2X + 8X = 10X (Onlar basama?? tamam)
 
-	; Þimdi Birler basamaðýný ekle
+	; ?imdi Birler basama??n? ekle
 	ADDWF   girilen_birler, W   ; W = (Onlar*10) + Birler
 	MOVWF   temp_calc           ; Sonucu temp_calc'a kaydet (Örn: 25)
 
     
-    ; 2. ADIM: LÝMÝT KONTROLÜ (Örnek: Min 18, Max 40 Derece)
+    ; 2. ADIM: L?M?T KONTROLÜ (Örnek: Min 18, Max 40 Derece)
     	; Üst Limit Kontrolü (MAX 50 )
 	MOVF    temp_calc, W
 	SUBLW   50              
-	BTFSS   STATUS, 0           ; Eðer sonuç negatifse (C=0), sayý 50'tan büyüktür.
+	BTFSS   STATUS, 0           ; E?er sonuç negatifse (C=0), say? 50'tan büyüktür.
 	GOTO    HATA_DURUMU         ; 50'tan büyükse hataya git
 
 	; Alt Limit Kontrolü (MIN 10 )
 	MOVF    temp_calc, W
-	SUBLW   10               ; 10 - Sayý (Eðer Sayý > 10 ise C=0 olur, dikkat!)
-	BTFSC   STATUS, 0           ; C=1 ise (Sayý <= 17) hataya git
+	SUBLW   10               ; 10 - Say? (E?er Say? > 10 ise C=0 olur, dikkat!)
+	BTFSC   STATUS, 0           ; C=1 ise (Say? <= 17) hataya git
 	GOTO    HATA_DURUMU
 
     
-    ; 3. ADIM: ATAMA (Deðerler geçerli)
+    ; 3. ADIM: ATAMA (De?erler geçerli)
     
     KAYDET_VE_CIK:
-	; Tamsayý kýsmýný kaydet
+	; Tamsay? k?sm?n? kaydet
 	MOVF    temp_calc, W
-	MOVWF   desired_temp_int    ; Ana deðiþkenimize atadýk
+	MOVWF   desired_temp_int    ; Ana de?i?kenimize atad?k
 
-	; Ondalýk kýsmýný kaydet (Bunu kontrol etmeye gerek yok, 0-9 arasýdýr zaten)
+	; Ondal?k k?sm?n? kaydet (Bunu kontrol etmeye gerek yok, 0-9 aras?d?r zaten)
 	MOVF    girilen_ondalik, W
-	MOVWF   desired_temp_frac   ; Ana ondalýk deðiþkene atadýk
+	MOVWF   desired_temp_frac   ; Ana ondal?k de?i?kene atad?k
 
-	; Ýþlem baþarýlý mesajý veya LCD güncellemesi buraya
+	; ??lem ba?ar?l? mesaj? veya LCD güncellemesi buraya
 	RETURN ;Döngüye geri dön
 
     ;--------------------------------------------------------------------------
-    ; HATA YÖNETÝMÝ
+    ; HATA YÖNET?M?
     ;--------------------------------------------------------------------------
     HATA_DURUMU:
-	; Kullanýcý saçma bir deðer girdi (Örn: 99 derece veya 05 derece)
+	; Kullan?c? saçma bir de?er girdi (Örn: 99 derece veya 05 derece)
 	; Burada bir hata LED'i yakabilirsin veya LCD'de "GECERSIZ" yazabilirsin.
-	; Þimdilik sadece deðerleri sýfýrlayýp baþa dönelim.
+	; ?imdilik sadece de?erleri s?f?rlay?p ba?a dönelim.
 	CLRF    desired_temp_int
 	CLRF    desired_temp_frac
 	RETURN

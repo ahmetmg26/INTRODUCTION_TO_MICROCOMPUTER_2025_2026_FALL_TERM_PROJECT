@@ -33,6 +33,7 @@ counter: DS 1
 sayi: DS 1
 temp_sayi: DS 1
 number: DS 1    
+tmp: DS 1
     
 ; Fonksiyonlar    
 PSECT code,class=CODE,delta=2   
@@ -85,11 +86,14 @@ digitlere_ayir:
 ;--------------------------------------------------------------- 
 updateDisplay:
     
+    MOVLW HIGH(updateDisplay) ; Önce PCLATH'ý bu fonksiyonun sayfasýna ayarla
+    MOVWF PCLATH
+    
     MOVLW 0
     MOVF digitNum , W
     
-    MOVLW HIGH(updateDisplay) ; Bu etiketin oldu?u yerin Yüksek Adresini al
-    MOVWF PCLATH              ; PCLATH'a yükle (Art?k do?ru sayfaday?z)
+    ;MOVLW HIGH(updateDisplay) ; Bu etiketin oldu?u yerin Yüksek Adresini al
+    ;MOVWF PCLATH              ; PCLATH'a yükle (Art?k do?ru sayfaday?z)
     MOVF digitNum , W
     ADDWF PCL,F
     NOP
@@ -135,9 +139,7 @@ updateDisplay:
 ;------------------------------------------------------------    
     
     
-getDisplayNumber:   ;abcdefgh bitlerini belirler
-    ; if(number < 0 && number > 15) return 0
-   
+getDisplayNumber:
     MOVWF number  ;number=W
     
     MOVLW 0
