@@ -1,7 +1,18 @@
-; BOARD 1 - Sicaklik Kontrol (ornek.asm'den uyarlanmis)
+; BOARD 1 - Sicaklik Kontrol
 ; Heater=RA1, Cooler=RA2, Temp=RA0, Tach=RA4
 ; 7-Segment: RD0-RD7, Digits: RC0-RC3
 ; Keypad: RB0-RB3 rows, RB4-RB7 cols
+; UART: RC6=TX, RC7=RX
+;
+; UART PROTOKOL (Binary Command-Response):
+; PC -> PIC Komutlari:
+;   0x01 = Get desired temp fractional
+;   0x02 = Get desired temp integral
+;   0x03 = Get ambient temp fractional
+;   0x04 = Get ambient temp integral
+;   0x05 = Get fan speed
+;   10xxxxxx = Set desired temp fractional (6-bit deger)
+;   11xxxxxx = Set desired temp integral (6-bit deger)
 
 PROCESSOR 16F877A
 #include <xc.inc>
@@ -32,6 +43,10 @@ PSECT udata_bank0
     
     display_mode: DS 1
     cycle_count:  DS 1
+    
+    ; UART
+    rx_byte:     DS 1
+    tx_byte:     DS 1
 
 PSECT resetVec, class=CODE, delta=2
     ORG 0x00
@@ -53,6 +68,12 @@ MAIN:
     CLRF timer_tick
 
 MAIN_LOOP:
+    BCF STATUS, 5
+    BCF STATUS, 6
+    
+    ; UART komut kontrol
+    CALL uart_check_command
+    
     CALL check_keypad
     
     ; ADC oku
@@ -70,7 +91,7 @@ wait_adc:
     BCF STATUS, 0
     RRF adc_val, F      ; /2
 
-    ; Fan hizi olcumu (cooler calisiyor mu?)
+    ; Fan hizi olcumu
     BTFSS PORTA, 2
     GOTO fan_off
     CALL measure_fan_speed
@@ -80,9 +101,6 @@ fan_off:
 fan_done:
 
     ; Sicaklik kontrolu
-    ; target_val > adc_val -> Isit
-    ; target_val < adc_val -> Sogut
-    
     MOVF adc_val, W
     SUBWF target_val, W
     BTFSS STATUS, STATUS_C_POSITION
@@ -96,13 +114,13 @@ fan_done:
     GOTO TURN_OFF_ALL
 
 TURN_ON_HEATER:
-    BSF PORTA, 1        ; Heater ON (RA1)
-    BCF PORTA, 2        ; Cooler OFF (RA2)
+    BSF PORTA, 1
+    BCF PORTA, 2
     GOTO DISPLAY_SECTION
 
 TURN_ON_COOLER:
-    BCF PORTA, 1        ; Heater OFF
-    BSF PORTA, 2        ; Cooler ON
+    BCF PORTA, 1
+    BSF PORTA, 2
     GOTO DISPLAY_SECTION
 
 TURN_OFF_ALL:
@@ -110,12 +128,10 @@ TURN_OFF_ALL:
     BCF PORTA, 2
 
 DISPLAY_SECTION:
-    ; key_step 0 ise normal display, degil ise menu
     MOVF key_step, F
     BTFSS STATUS, 2
     GOTO SHOW_MENU
     
-    ; Normal display - mode'a gore goster
     MOVF display_mode, W
     XORLW 0
     BTFSC STATUS, 2
@@ -172,19 +188,16 @@ bcd_loop:
     GOTO bcd_loop
 
 display_ready:
-    ; Mode gostergesini decimal2'ye yaz
     MOVF display_mode, W
     MOVWF decimal2
     GOTO do_display
 
 SHOW_MENU:
-    ; key_step 1 ise tire goster
     MOVF key_step, W
     XORLW 1
     BTFSC STATUS, 2
     GOTO show_dashes
     
-    ; Girilen rakamlari goster
     MOVF digit1, W
     MOVWF tens
     MOVF digit2, W
@@ -195,7 +208,7 @@ SHOW_MENU:
     GOTO do_display
 
 show_dashes:
-    CLRF tens           ; 0 goster (tire yerine)
+    CLRF tens
     CLRF ones
     CLRF decimal1
     CLRF decimal2
@@ -206,7 +219,6 @@ do_display:
     MOVWF disp_loop
 
 DISPLAY_REFRESH:
-    ; Digit 1 (RC0) - Onlar
     MOVF tens, W
     CALL get_code_safe
     MOVWF PORTD
@@ -214,7 +226,6 @@ DISPLAY_REFRESH:
     CALL delay_mux
     BCF PORTC, 0
 
-    ; Digit 2 (RC1) - Birler + DP
     MOVF ones, W
     CALL get_code_safe
     IORLW 10000000B
@@ -223,7 +234,6 @@ DISPLAY_REFRESH:
     CALL delay_mux
     BCF PORTC, 1
 
-    ; Digit 3 (RC2) - Ondalik1
     MOVF decimal1, W
     CALL get_code_safe
     MOVWF PORTD
@@ -231,7 +241,6 @@ DISPLAY_REFRESH:
     CALL delay_mux
     BCF PORTC, 2
 
-    ; Digit 4 (RC3) - Mode
     MOVF decimal2, W
     CALL get_code_safe
     MOVWF PORTD
@@ -242,14 +251,13 @@ DISPLAY_REFRESH:
     DECFSZ disp_loop, F
     GOTO DISPLAY_REFRESH
 
-    ; Mode rotasyonu (sadece key_step=0 iken)
     MOVF key_step, F
     BTFSS STATUS, 2
     GOTO skip_rotation
     
     INCF cycle_count, F
     MOVF cycle_count, W
-    SUBLW 100               ; 30'dan 100'e arttirildi (daha yavas)
+    SUBLW 100
     BTFSS STATUS, 2
     GOTO skip_rotation
     
@@ -265,13 +273,144 @@ skip_rotation:
     GOTO MAIN_LOOP
 
 ; ============================================
+; UART KOMUT ISLEYICI
+; ============================================
+uart_check_command:
+    ; RCIF flag kontrol
+    BANKSEL PIR1
+    BTFSS PIR1, 5
+    GOTO uart_cmd_exit
+    
+    ; Overrun error kontrolu
+    BANKSEL RCSTA
+    BTFSC RCSTA, 1
+    GOTO uart_clear_oerr
+    
+    ; Veriyi oku
+    BANKSEL RCREG
+    MOVF RCREG, W
+    BCF STATUS, 5
+    BCF STATUS, 6
+    MOVWF rx_byte
+    
+    ; Komut analizi
+    ; Bit 7-6 kontrol: 00=GET, 10=SET frac, 11=SET int
+    
+    BTFSC rx_byte, 7
+    GOTO uart_set_cmd
+    
+    ; GET komutu (bit 7 = 0)
+    MOVF rx_byte, W
+    XORLW 0x01          ; Get desired temp fractional
+    BTFSC STATUS, 2
+    GOTO cmd_get_desired_frac
+    
+    MOVF rx_byte, W
+    XORLW 0x02          ; Get desired temp integral
+    BTFSC STATUS, 2
+    GOTO cmd_get_desired_int
+    
+    MOVF rx_byte, W
+    XORLW 0x03          ; Get ambient temp fractional
+    BTFSC STATUS, 2
+    GOTO cmd_get_ambient_frac
+    
+    MOVF rx_byte, W
+    XORLW 0x04          ; Get ambient temp integral
+    BTFSC STATUS, 2
+    GOTO cmd_get_ambient_int
+    
+    MOVF rx_byte, W
+    XORLW 0x05          ; Get fan speed
+    BTFSC STATUS, 2
+    GOTO cmd_get_fan_speed
+    
+    GOTO uart_cmd_exit
+
+cmd_get_desired_frac:
+    MOVF target_decimal, W
+    CALL uart_send_byte
+    GOTO uart_cmd_exit
+
+cmd_get_desired_int:
+    MOVF target_val, W
+    CALL uart_send_byte
+    GOTO uart_cmd_exit
+
+cmd_get_ambient_frac:
+    MOVLW 0             ; Fractional kisim yok (ADC tam deger)
+    CALL uart_send_byte
+    GOTO uart_cmd_exit
+
+cmd_get_ambient_int:
+    MOVF adc_val, W
+    CALL uart_send_byte
+    GOTO uart_cmd_exit
+
+cmd_get_fan_speed:
+    MOVF fan_speed, W
+    CALL uart_send_byte
+    GOTO uart_cmd_exit
+
+uart_set_cmd:
+    ; SET komutu (bit 7 = 1)
+    ; Bit 6: 0=fractional, 1=integral
+    ; Bit 5-0: 6-bit deger
+    
+    BTFSC rx_byte, 6
+    GOTO cmd_set_desired_int
+    
+    ; Set fractional (10xxxxxx)
+    MOVF rx_byte, W
+    ANDLW 0x3F          ; Alt 6 bit (0-63 arasi)
+    MOVWF target_decimal
+    GOTO uart_cmd_exit
+
+cmd_set_desired_int:
+    ; Set integral (11xxxxxx)
+    MOVF rx_byte, W
+    ANDLW 0x3F          ; Alt 6 bit (0-63 arasi, ama 10-50 kabul edilir)
+    MOVWF target_val
+    
+    ; Aralik kontrolu (10-50)
+    MOVLW 10
+    SUBWF target_val, W
+    BTFSS STATUS, 0
+    GOTO set_default_temp
+    
+    MOVLW 51
+    SUBWF target_val, W
+    BTFSC STATUS, 0
+    GOTO set_default_temp
+    
+    GOTO uart_cmd_exit
+
+set_default_temp:
+    MOVLW 25
+    MOVWF target_val
+    GOTO uart_cmd_exit
+
+uart_clear_oerr:
+    BANKSEL RCSTA
+    BCF RCSTA, 4
+    BSF RCSTA, 4
+    BANKSEL RCREG
+    MOVF RCREG, W
+    BCF STATUS, 5
+    BCF STATUS, 6
+    
+uart_cmd_exit:
+    BCF STATUS, 5
+    BCF STATUS, 6
+    RETURN
+
+; ============================================
 ; FAN HIZI OLCUMU
-; TMR0 counter mode - RA4/T0CKI'dan pulse sayar
 ; ============================================
 measure_fan_speed:
     INCF timer_tick, F
     MOVF timer_tick, W
-    SUBLW 50            ; 50 dongu sonra oku
+    SUBLW 50
     BTFSS STATUS, 2
     RETURN
     
@@ -302,7 +441,6 @@ scan_key:
     MOVLW 0xFF
     MOVWF last_key
     
-    ; Row 0 (RB0=LOW)
     MOVLW 11111110B
     MOVWF PORTB
     CALL dly_stab
@@ -315,7 +453,6 @@ scan_key:
     BTFSS PORTB, 7
     GOTO fA
     
-    ; Row 1 (RB1=LOW)
     MOVLW 11111101B
     MOVWF PORTB
     CALL dly_stab
@@ -328,7 +465,6 @@ scan_key:
     BTFSS PORTB, 7
     GOTO fB
     
-    ; Row 2 (RB2=LOW)
     MOVLW 11111011B
     MOVWF PORTB
     CALL dly_stab
@@ -341,7 +477,6 @@ scan_key:
     BTFSS PORTB, 7
     GOTO fC
     
-    ; Row 3 (RB3=LOW)
     MOVLW 11110111B
     MOVWF PORTB
     CALL dly_stab
@@ -421,7 +556,6 @@ fD: MOVLW 13
     CALL wrel
     RETURN
 
-; Tus birakilana kadar bekle (display gosterirken)
 wrel:
     MOVLW 50
     MOVWF disp_loop
@@ -488,31 +622,26 @@ dly_stab:
     RETURN
 
 handle_key:
-    ; A tusu - giris basla
     MOVF last_key, W
     XORLW 10
     BTFSC STATUS, 2
     GOTO key_A
     
-    ; # tusu - onayla
     MOVF last_key, W
     XORLW 15
     BTFSC STATUS, 2
     GOTO key_confirm
     
-    ; * tusu - ondalik
     MOVF last_key, W
     XORLW 14
     BTFSC STATUS, 2
     GOTO key_star
     
-    ; 0-9 rakam mi?
     MOVF last_key, W
     SUBLW 9
     BTFSS STATUS, 0
     RETURN
     
-    ; key_step 0 ise atla
     MOVF key_step, F
     BTFSC STATUS, 2
     RETURN
@@ -581,7 +710,6 @@ key_confirm:
     BTFSC STATUS, 0
     RETURN
     
-    ; Hesapla: digit1*10 + digit2
     CLRF target_val
     MOVF digit1, W
     MOVWF delay1
@@ -597,7 +725,6 @@ add_digit2:
     MOVF digit2, W
     ADDWF target_val, F
     
-    ; Aralik: 10-50
     MOVLW 10
     SUBWF target_val, W
     BTFSS STATUS, 0
@@ -669,52 +796,58 @@ get_code_safe:
     MOVF digit_temp, W
     XORLW 10
     BTFSC STATUS, 2
-    RETLW 01000000B     ; Tire
+    RETLW 01000000B
     RETLW 00000000B
 
 ; ============================================
 ; INIT
 ; ============================================
 init:
-    BSF STATUS, 5       ; Bank 1
+    BSF STATUS, 5
     
-    ; Port yonleri
-    MOVLW 0b00010001    ; RA0=in(ADC), RA4=in(Tach/T0CKI), RA1,RA2=out
+    MOVLW 0b00010001
     MOVWF TRISA
     
-    MOVLW 11110000B     ; RB0-3=out(rows), RB4-7=in(cols)
+    MOVLW 11110000B
     MOVWF TRISB
     
-    CLRF TRISC          ; RC0-7 output (display)
-    CLRF TRISD          ; RD0-7 output (segments)
+    MOVLW 10000000B
+    MOVWF TRISC
+    CLRF TRISD
     
-    ; ADC ayari - right justified, AN0 analog
     MOVLW 10001110B
     MOVWF ADCON1
     
-    ; OPTION_REG: TMR0 counter mode, RA4/T0CKI, falling edge
-    ; Bit 5: T0CS=1 (T0CKI pin)
-    ; Bit 4: T0SE=1 (falling edge)
-    ; Bit 3: PSA=1 (prescaler to WDT, not TMR0)
-    ; Bit 7: RBPU=0 (pull-ups enabled)
     MOVLW 10101000B
     MOVWF OPTION_REG
     
-    BCF STATUS, 5       ; Bank 0
+    BCF STATUS, 5
     
-    ; Portlari temizle
     CLRF PORTA
     CLRF PORTC
     CLRF PORTD
     MOVLW 11111111B
     MOVWF PORTB
     
-    ; ADCON0: Fosc/32, AN0, ADC ON
     MOVLW 10000001B
     MOVWF ADCON0
     
-    ; TMR0 sifirla
     CLRF TMR0
+    
+    ; UART: 9600 baud, 4MHz
+    BANKSEL SPBRG
+    MOVLW 25
+    MOVWF SPBRG
+    
+    MOVLW 00100100B
+    MOVWF TXSTA
+    
+    BANKSEL RCSTA
+    MOVLW 10010000B
+    MOVWF RCSTA
+    
+    BCF STATUS, 5
+    BCF STATUS, 6
     
     CALL delay_mux
     RETURN
@@ -729,6 +862,22 @@ d1:
     NOP
     DECFSZ delay1, F
     GOTO d1
+    RETURN
+
+; ============================================
+; UART SEND
+; ============================================
+uart_send_byte:
+    MOVWF tx_byte
+uart_wait_tx:
+    BANKSEL TXSTA
+    BTFSS TXSTA, 1
+    GOTO uart_wait_tx
+    BANKSEL TXREG
+    MOVF tx_byte, W
+    MOVWF TXREG
+    BCF STATUS, 5
+    BCF STATUS, 6
     RETURN
 
     END
