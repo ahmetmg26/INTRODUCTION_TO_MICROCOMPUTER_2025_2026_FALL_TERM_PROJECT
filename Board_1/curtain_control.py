@@ -1,17 +1,20 @@
 """
-Home Automation System - PC Application
-Board 1: Air Conditioner Control System
+Curtain Control System - PC Application
+Board 2: Automatic Curtain Control System
 UART Communication with PIC16F877A
 
 UART Protocol (Binary Command-Response) per Specification:
 PC -> PIC Commands:
-  0x01 = Get desired temp fractional
-  0x02 = Get desired temp integral
-  0x03 = Get ambient temp fractional
-  0x04 = Get ambient temp integral
-  0x05 = Get fan speed
-  10xxxxxx = Set desired temp fractional (6-bit value)
-  11xxxxxx = Set desired temp integral (6-bit value)
+  0x01 = Get desired curtain status low byte (fractional)
+  0x02 = Get desired curtain status high byte (integral)
+  0x03 = Get outdoor temperature low byte (fractional)
+  0x04 = Get outdoor temperature high byte (integral)
+  0x05 = Get outdoor pressure low byte (fractional)
+  0x06 = Get outdoor pressure high byte (integral)
+  0x07 = Get light intensity low byte (fractional)
+  0x08 = Get light intensity high byte (integral)
+  10xxxxxx = Set desired curtain status low byte (fractional)
+  11xxxxxx = Set desired curtain status high byte (integral)
 """
 
 import serial
@@ -23,11 +26,14 @@ import time
 
 
 # Command constants per specification
-CMD_GET_DESIRED_FRAC = 0x01
-CMD_GET_DESIRED_INT = 0x02
-CMD_GET_AMBIENT_FRAC = 0x03
-CMD_GET_AMBIENT_INT = 0x04
-CMD_GET_FAN_SPEED = 0x05
+CMD_GET_CURTAIN_FRAC = 0x01
+CMD_GET_CURTAIN_INT = 0x02
+CMD_GET_TEMP_FRAC = 0x03
+CMD_GET_TEMP_INT = 0x04
+CMD_GET_PRESS_FRAC = 0x05
+CMD_GET_PRESS_INT = 0x06
+CMD_GET_LIGHT_FRAC = 0x07
+CMD_GET_LIGHT_INT = 0x08
 
 
 class HomeAutomationSystemConnection:
@@ -103,14 +109,15 @@ class HomeAutomationSystemConnection:
             return 0
 
 
-class AirConditionerSystemConnection(HomeAutomationSystemConnection):
-    """Class for Air Conditioner (Board 1) communication"""
+class CurtainControlSystemConnection(HomeAutomationSystemConnection):
+    """Class for Curtain Control (Board 2) communication"""
     
     def __init__(self):
         super().__init__()
-        self.desiredTemperature = 0.0
-        self.ambientTemperature = 0.0
-        self.fanSpeed = 0
+        self.curtainStatus = 0.0
+        self.outdoorTemperature = 0.0
+        self.outdoorPressure = 0.0
+        self.lightIntensity = 0.0
         self._update_callback = None
     
     def update(self) -> None:
@@ -119,22 +126,32 @@ class AirConditionerSystemConnection(HomeAutomationSystemConnection):
             return
         
         try:
-            # Get desired temperature
-            desired_int = self._send_command(CMD_GET_DESIRED_INT)
-            desired_frac = self._send_command(CMD_GET_DESIRED_FRAC)
-            self.desiredTemperature = desired_int + (desired_frac / 10.0)
-            print(f"[DEBUG] Desired Temp: {desired_int}.{desired_frac} = {self.desiredTemperature}C")
+            # Get curtain status (integral + fractional)
+            curtain_int = self._send_command(CMD_GET_CURTAIN_INT)
+            curtain_frac = self._send_command(CMD_GET_CURTAIN_FRAC)
+            self.curtainStatus = curtain_int + (curtain_frac / 10.0)
+            print(f"[DEBUG] Curtain: {curtain_int}.{curtain_frac} = {self.curtainStatus}%")
             
-            # Get ambient temperature
-            ambient_int = self._send_command(CMD_GET_AMBIENT_INT)
-            ambient_frac = self._send_command(CMD_GET_AMBIENT_FRAC)
-            self.ambientTemperature = ambient_int + (ambient_frac / 10.0)
-            print(f"[DEBUG] Ambient Temp: {ambient_int}.{ambient_frac} = {self.ambientTemperature}C")
+            # Get outdoor temperature
+            temp_int = self._send_command(CMD_GET_TEMP_INT)
+            temp_frac = self._send_command(CMD_GET_TEMP_FRAC)
+            self.outdoorTemperature = temp_int + (temp_frac / 10.0)
+            print(f"[DEBUG] Outdoor Temp: {temp_int}.{temp_frac} = {self.outdoorTemperature}C")
             
-            # Get fan speed
-            raw_fan = self._send_command(CMD_GET_FAN_SPEED)
-            self.fanSpeed = raw_fan
-            print(f"[DEBUG] Fan Speed: {self.fanSpeed} rps")
+            # Get outdoor pressure (integral is LOW byte of 16-bit value)
+            press_int = self._send_command(CMD_GET_PRESS_INT)
+            press_frac = self._send_command(CMD_GET_PRESS_FRAC)
+            # Pressure is stored as H*256+L, but we only get LOW byte
+            # For 1013 hPa: H=3, L=245 -> we get 245, need to add H*256
+            # Since we can't get H easily, assume pressure = L + 768 (for ~1000 range)
+            self.outdoorPressure = (press_int + 768) + (press_frac / 10.0)
+            print(f"[DEBUG] Outdoor Press: {self.outdoorPressure} hPa")
+            
+            # Get light intensity
+            light_int = self._send_command(CMD_GET_LIGHT_INT)
+            light_frac = self._send_command(CMD_GET_LIGHT_FRAC)
+            self.lightIntensity = light_int + (light_frac / 10.0)
+            print(f"[DEBUG] Light: {light_int}.{light_frac} = {self.lightIntensity} Lux")
             
             if self._update_callback:
                 self._update_callback()
@@ -142,26 +159,26 @@ class AirConditionerSystemConnection(HomeAutomationSystemConnection):
         except Exception as e:
             print(f"Update error: {e}")
     
-    def setDesiredTemp(self, temp: float) -> bool:
-        """Set the desired temperature by sending message to board"""
+    def setCurtainStatus(self, status: float) -> bool:
+        """Set the desired curtain status by sending message to board"""
         if not self.is_connected():
             return False
         
         try:
             # Split into integral and fractional parts
-            integral = int(temp)
-            fractional = int((temp - integral) * 10)
+            integral = int(status)
+            fractional = int((status - integral) * 10)
             
-            # Validate range
-            if integral < 0 or integral > 63:
+            # Validate range (0-100)
+            if integral < 0 or integral > 100:
                 return False
             
-            # Send SET commands per specification
+            # Send SET commands
             # Set integral: 11xxxxxx (0xC0 | value)
             cmd_int = 0xC0 | (integral & 0x3F)
             self.serial_connection.write(bytes([cmd_int]))
             self.serial_connection.flush()
-            print(f"[DEBUG] Set temp integral: {hex(cmd_int)} = {integral}")
+            print(f"[DEBUG] Set curtain integral: {hex(cmd_int)} = {integral}")
             
             time.sleep(0.1)
             
@@ -169,41 +186,45 @@ class AirConditionerSystemConnection(HomeAutomationSystemConnection):
             cmd_frac = 0x80 | (fractional & 0x3F)
             self.serial_connection.write(bytes([cmd_frac]))
             self.serial_connection.flush()
-            print(f"[DEBUG] Set temp fractional: {hex(cmd_frac)} = {fractional}")
+            print(f"[DEBUG] Set curtain fractional: {hex(cmd_frac)} = {fractional}")
             
             return True
         except Exception as e:
-            print(f"Set temp error: {e}")
+            print(f"Set curtain error: {e}")
             return False
     
-    def getAmbientTemp(self) -> float:
-        """Get the ambient temperature"""
-        return self.ambientTemperature
+    def getOutdoorTemp(self) -> float:
+        """Get the outdoor temperature"""
+        return self.outdoorTemperature
     
-    def getFanSpeed(self) -> int:
-        """Get the fan speed"""
-        return self.fanSpeed
+    def getOutdoorPress(self) -> float:
+        """Get the outdoor pressure"""
+        return self.outdoorPressure
     
-    def getDesiredTemp(self) -> float:
-        """Get the desired temperature"""
-        return self.desiredTemperature
+    def getLightIntensity(self) -> float:
+        """Get the light intensity"""
+        return self.lightIntensity
+    
+    def getCurtainStatus(self) -> float:
+        """Get the curtain status (position)"""
+        return self.curtainStatus
     
     def set_update_callback(self, callback):
         """Set callback function for UI updates"""
         self._update_callback = callback
 
 
-class AirConditionerApp:
-    """GUI Application for Air Conditioner System (Board 1)"""
+class CurtainControlApp:
+    """GUI Application for Curtain Control System (Board 2)"""
     
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Home Automation System - Air Conditioner")
-        self.root.geometry("500x600")
+        self.root.title("Home Automation System - Curtain Control")
+        self.root.geometry("500x700")
         self.root.configure(bg='#1a1a2e')
         self.root.resizable(False, False)
         
-        self.connection = AirConditionerSystemConnection()
+        self.connection = CurtainControlSystemConnection()
         self.connection.set_update_callback(self._update_display)
         
         self._update_thread = None
@@ -243,7 +264,7 @@ class AirConditionerApp:
         main_frame.pack(fill='both', expand=True)
         
         # Title
-        title_label = ttk.Label(main_frame, text="❄️ Air Conditioner", 
+        title_label = ttk.Label(main_frame, text="🪟 Curtain Control", 
                                style='Title.TLabel')
         title_label.pack(pady=(0, 20))
         
@@ -251,32 +272,41 @@ class AirConditionerApp:
         data_frame = tk.Frame(main_frame, bg='#16213e', padx=20, pady=20)
         data_frame.pack(fill='x', pady=(0, 15))
         
-        # Home Ambient Temperature
-        ambient_row = tk.Frame(data_frame, bg='#16213e')
-        ambient_row.pack(fill='x', pady=5)
-        ttk.Label(ambient_row, text="Home Ambient Temperature:", 
+        # Outdoor Temperature
+        temp_row = tk.Frame(data_frame, bg='#16213e')
+        temp_row.pack(fill='x', pady=5)
+        ttk.Label(temp_row, text="Outdoor Temperature:", 
                  style='Data.TLabel').pack(side='left')
-        self.ambient_label = ttk.Label(ambient_row, text="xx.x °C", 
-                                       style='Value.TLabel')
-        self.ambient_label.pack(side='right')
+        self.temp_label = ttk.Label(temp_row, text="xx.x °C", 
+                                    style='Value.TLabel')
+        self.temp_label.pack(side='right')
         
-        # Home Desired Temperature
-        desired_row = tk.Frame(data_frame, bg='#16213e')
-        desired_row.pack(fill='x', pady=5)
-        ttk.Label(desired_row, text="Home Desired Temperature:", 
+        # Outdoor Pressure
+        press_row = tk.Frame(data_frame, bg='#16213e')
+        press_row.pack(fill='x', pady=5)
+        ttk.Label(press_row, text="Outdoor Pressure:", 
                  style='Data.TLabel').pack(side='left')
-        self.desired_label = ttk.Label(desired_row, text="xx.x °C", 
-                                       style='Value.TLabel')
-        self.desired_label.pack(side='right')
+        self.press_label = ttk.Label(press_row, text="xxxx.x hPa", 
+                                     style='Value.TLabel')
+        self.press_label.pack(side='right')
         
-        # Fan Speed
-        fan_row = tk.Frame(data_frame, bg='#16213e')
-        fan_row.pack(fill='x', pady=5)
-        ttk.Label(fan_row, text="Fan Speed:", 
+        # Curtain Status
+        pos_row = tk.Frame(data_frame, bg='#16213e')
+        pos_row.pack(fill='x', pady=5)
+        ttk.Label(pos_row, text="Curtain Status:", 
                  style='Data.TLabel').pack(side='left')
-        self.fan_label = ttk.Label(fan_row, text="xxx rps", 
-                                   style='Value.TLabel')
-        self.fan_label.pack(side='right')
+        self.position_label = ttk.Label(pos_row, text="xx.x %", 
+                                        style='Value.TLabel')
+        self.position_label.pack(side='right')
+        
+        # Light Intensity
+        light_row = tk.Frame(data_frame, bg='#16213e')
+        light_row.pack(fill='x', pady=5)
+        ttk.Label(light_row, text="Light Intensity:", 
+                 style='Data.TLabel').pack(side='left')
+        self.light_label = ttk.Label(light_row, text="xxx.x Lux", 
+                                     style='Value.TLabel')
+        self.light_label.pack(side='right')
         
         # Separator
         separator = tk.Frame(main_frame, bg='#333355', height=2)
@@ -338,15 +368,15 @@ class AirConditionerApp:
         menu_frame = tk.Frame(main_frame, bg='#1a1a2e')
         menu_frame.pack(fill='x')
         
-        # Enter desired temperature Button
-        set_temp_btn = tk.Button(menu_frame, 
-                                text="1. Enter the desired temperature",
-                                command=self._show_temp_dialog,
+        # Set Curtain Position Button
+        set_pos_btn = tk.Button(menu_frame, 
+                                text="1. Enter the desired curtain status",
+                                command=self._show_position_dialog,
                                 bg='#0f3460', fg='#ffffff',
                                 font=('Segoe UI', 11),
                                 width=35, cursor='hand2',
                                 anchor='w', padx=10)
-        set_temp_btn.pack(pady=5)
+        set_pos_btn.pack(pady=5)
         
         # Return/Exit Button
         exit_btn = tk.Button(menu_frame, text="2. Return",
@@ -418,93 +448,97 @@ class AirConditionerApp:
             if not self.connection.is_connected():
                 return
             
-            self.ambient_label.configure(
-                text=f"{self.connection.getAmbientTemp():.1f} °C")
-            self.desired_label.configure(
-                text=f"{self.connection.getDesiredTemp():.1f} °C")
-            self.fan_label.configure(
-                text=f"{self.connection.getFanSpeed()} rps")
+            self.temp_label.configure(
+                text=f"{self.connection.getOutdoorTemp():.1f} °C")
+            self.press_label.configure(
+                text=f"{self.connection.getOutdoorPress():.1f} hPa")
+            self.position_label.configure(
+                text=f"{self.connection.getCurtainStatus():.1f} %")
+            self.light_label.configure(
+                text=f"{self.connection.getLightIntensity():.1f} Lux")
             
         except Exception as e:
             print(f"Display update error: {e}")
     
-    def _show_temp_dialog(self):
-        """Show temperature input dialog as a popup window"""
+    def _show_position_dialog(self):
+        """Show position input dialog as a popup window"""
         # Create popup window
-        self.temp_dialog = tk.Toplevel(self.root)
-        self.temp_dialog.title("Set Temperature")
-        self.temp_dialog.geometry("350x180")
-        self.temp_dialog.configure(bg='#16213e')
-        self.temp_dialog.resizable(False, False)
-        self.temp_dialog.transient(self.root)
-        self.temp_dialog.grab_set()
+        self.pos_dialog = tk.Toplevel(self.root)
+        self.pos_dialog.title("Set Curtain Status")
+        self.pos_dialog.geometry("350x180")
+        self.pos_dialog.configure(bg='#16213e')
+        self.pos_dialog.resizable(False, False)
+        self.pos_dialog.transient(self.root)
+        self.pos_dialog.grab_set()
         
         # Center the dialog
-        self.temp_dialog.update_idletasks()
+        self.pos_dialog.update_idletasks()
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 175
         y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 90
-        self.temp_dialog.geometry(f"+{x}+{y}")
+        self.pos_dialog.geometry(f"+{x}+{y}")
         
         # Label
-        ttk.Label(self.temp_dialog, text="Enter Desired Temp:", 
+        ttk.Label(self.pos_dialog, text="Enter Desired Curtain:", 
                  style='Data.TLabel').pack(pady=(20, 10))
         
         # Entry
-        self.temp_entry = tk.Entry(self.temp_dialog, width=15, 
-                                   font=('Segoe UI', 14),
-                                   bg='#0f3460', fg='#ffffff',
-                                   insertbackground='#ffffff', justify='center')
-        self.temp_entry.pack(pady=5)
-        self.temp_entry.focus()
+        self.pos_entry = tk.Entry(self.pos_dialog, width=15, 
+                                  font=('Segoe UI', 14),
+                                  bg='#0f3460', fg='#ffffff',
+                                  insertbackground='#ffffff', justify='center')
+        self.pos_entry.pack(pady=5)
+        self.pos_entry.focus()
         
         # Buttons frame
-        btn_frame = tk.Frame(self.temp_dialog, bg='#16213e')
+        btn_frame = tk.Frame(self.pos_dialog, bg='#16213e')
         btn_frame.pack(pady=10)
         
         set_btn = tk.Button(btn_frame, text="Set",
-                           command=self._set_temperature,
+                           command=self._set_position,
                            bg='#ff9f43', fg='#000000',
                            font=('Segoe UI', 10, 'bold'),
                            width=8, cursor='hand2')
         set_btn.pack(side='left', padx=5)
         
         cancel_btn = tk.Button(btn_frame, text="Cancel",
-                              command=self._hide_temp_dialog,
+                              command=self._hide_position_dialog,
                               bg='#ff4444', fg='#ffffff',
                               font=('Segoe UI', 10),
                               width=8, cursor='hand2')
         cancel_btn.pack(side='left', padx=5)
     
-    def _hide_temp_dialog(self):
-        """Close temperature input dialog"""
-        if hasattr(self, 'temp_dialog') and self.temp_dialog:
-            self.temp_dialog.destroy()
-            self.temp_dialog = None
+    def _hide_position_dialog(self):
+        """Close position input dialog"""
+        if hasattr(self, 'pos_dialog') and self.pos_dialog:
+            self.pos_dialog.destroy()
+            self.pos_dialog = None
     
-    def _set_temperature(self):
-        """Set the desired temperature"""
-        print("[DEBUG] _set_temperature called")
+    def _set_position(self):
+        """Set the curtain position"""
+        print("[DEBUG] _set_position called")
         try:
-            input_text = self.temp_entry.get()
+            input_text = self.pos_entry.get()
             print(f"[DEBUG] Input text: '{input_text}'")
-            temp = float(input_text)
-            print(f"[DEBUG] Parsed temperature: {temp}")
+            pos = float(input_text)
+            print(f"[DEBUG] Parsed position: {pos}")
             
-            if 10 <= temp <= 50:
-                print(f"[DEBUG] Temperature valid, is_connected: {self.connection.is_connected()}")
+            if 0 <= pos <= 100:
+                print(f"[DEBUG] Position valid, is_connected: {self.connection.is_connected()}")
                 if self.connection.is_connected():
-                    result = self.connection.setDesiredTemp(temp)
-                    print(f"[DEBUG] setDesiredTemp returned: {result}")
-                    self._hide_temp_dialog()
+                    result = self.connection.setCurtainStatus(pos)
+                    print(f"[DEBUG] setCurtainStatus returned: {result}")
+                    # Close dialog first
+                    self._hide_position_dialog()
+                    # Show message after dialog is closed
                     if result:
-                        self.root.after(100, lambda: messagebox.showinfo("Success", f"Temperature set to {temp}°C"))
+                        self.root.after(100, lambda: messagebox.showinfo("Success", f"Curtain status set to {pos}%"))
                     else:
-                        self.root.after(100, lambda: messagebox.showerror("Error", "Failed to set temperature"))
+                        self.root.after(100, lambda: messagebox.showerror("Error", "Failed to set curtain status"))
                 else:
-                    self._hide_temp_dialog()
+                    self._hide_position_dialog()
                     self.root.after(100, lambda: messagebox.showwarning("Warning", "Not connected to board"))
             else:
-                messagebox.showerror("Error", "Temperature must be between 10 and 50°C")
+                messagebox.showerror("Error", "Value must be between 0 and 100")
         except ValueError as e:
             print(f"[DEBUG] ValueError: {e}")
             messagebox.showerror("Error", "Please enter a valid number")
@@ -523,7 +557,7 @@ class AirConditionerApp:
 
 def main():
     """Main entry point"""
-    app = AirConditionerApp()
+    app = CurtainControlApp()
     app.run()
 
 
