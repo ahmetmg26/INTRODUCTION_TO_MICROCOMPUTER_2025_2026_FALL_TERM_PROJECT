@@ -170,8 +170,42 @@ prep_ambient:
     GOTO convert_to_bcd
 
 prep_fan:
+    ; Fan hizi 3 basamakli gosterim (ornegin 114)
+    ; Display sirasi: tens(digit0), ones(digit1), decimal1(digit2), decimal2(digit3)
+    ; Yani: tens=yuzler, ones=onlar, decimal1=birler, decimal2=mode
     MOVF fan_speed, W
-    GOTO convert_to_bcd
+    MOVWF digit_temp        ; Gecici olarak sakla
+    CLRF tens               ; tens = yuzler basamagi
+    CLRF ones               ; ones = onlar basamagi  
+    CLRF decimal1           ; decimal1 = birler basamagi
+    
+    ; Yuzler basamagi (100'e bol) -> tens'e koy
+prep_fan_hundreds:
+    MOVLW 100
+    SUBWF digit_temp, W
+    BTFSS STATUS, 0
+    GOTO prep_fan_tens_calc
+    MOVWF digit_temp
+    INCF tens, F            ; tens = yuzler basamagi
+    GOTO prep_fan_hundreds
+
+prep_fan_tens_calc:
+    ; Onlar basamagi -> ones'a koy
+    MOVLW 10
+    SUBWF digit_temp, W
+    BTFSS STATUS, 0
+    GOTO prep_fan_done
+    MOVWF digit_temp
+    INCF ones, F            ; ones = onlar basamagi
+    GOTO prep_fan_tens_calc
+
+prep_fan_done:
+    ; Kalan = birler -> decimal1'e koy
+    MOVF digit_temp, W
+    MOVWF decimal1          ; decimal1 = birler basamagi
+    MOVLW 2                 ; Mode 2 = Fan
+    MOVWF decimal2
+    GOTO do_display
 
 convert_to_bcd:
     MOVWF ones
@@ -226,16 +260,40 @@ DISPLAY_REFRESH:
     CALL delay_mux
     BCF PORTC, 0
 
+    ; Ones basamagi - mode 2 degilse nokta ekle
     MOVF ones, W
     CALL get_code_safe
-    IORLW 10000000B
+    ; Mode 2 (fan) mi kontrol et
+    MOVWF digit_temp        ; Gecici sakla
+    MOVF display_mode, W
+    XORLW 2
+    BTFSC STATUS, 2         ; Mode 2 ise nokta ekleme
+    GOTO ones_no_dot
+    MOVF digit_temp, W
+    IORLW 10000000B         ; Nokta ekle (mode 0,1 icin)
+    GOTO ones_display
+ones_no_dot:
+    MOVF digit_temp, W      ; Nokta yok (mode 2 icin)
+ones_display:
     MOVWF PORTD
     BSF PORTC, 1
     CALL delay_mux
     BCF PORTC, 1
 
+    ; Decimal1 basamagi - mode 2 ise nokta ekle
     MOVF decimal1, W
     CALL get_code_safe
+    MOVWF digit_temp        ; Gecici sakla
+    MOVF display_mode, W
+    XORLW 2
+    BTFSS STATUS, 2         ; Mode 2 degilse nokta ekleme
+    GOTO dec1_no_dot
+    MOVF digit_temp, W
+    IORLW 10000000B         ; Nokta ekle (mode 2 icin)
+    GOTO dec1_display
+dec1_no_dot:
+    MOVF digit_temp, W      ; Nokta yok (mode 0,1 icin)
+dec1_display:
     MOVWF PORTD
     BSF PORTC, 2
     CALL delay_mux
@@ -257,7 +315,7 @@ DISPLAY_REFRESH:
     
     INCF cycle_count, F
     MOVF cycle_count, W
-    SUBLW 100
+    SUBLW 30                ; ~2 saniye icin 30 dongu (her mod 2sn gorunur)
     BTFSS STATUS, 2
     GOTO skip_rotation
     
